@@ -1,0 +1,5 @@
+decompiled/
+*.decompiled.cs
+*.dll
+bin/
+obj/
