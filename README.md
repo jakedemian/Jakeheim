@@ -7,6 +7,7 @@ A personal, client-side BepInEx quality-of-life mod for Valheim. Each feature ha
 | Feature | Config section | What it does |
 |---|---|---|
 | [RudderReturn](#rudderreturn) | `[RudderReturn]` | The rudder recenters on its own when you're at the helm and not steering. |
+| [TieredRepair](#tieredrepair) | `[TieredRepair]` | The forge also repairs workbench gear, and the black forge also repairs workbench and forge gear. |
 
 ## Install
 
@@ -95,3 +96,45 @@ Notes:
 6. **Gamepad:** stick drift below the deadzone doesn't prevent centering.
 7. **Multiplayer:** a second player sees the rudder recenter.
 8. **Disabled:** `Enabled = false` behaves exactly like vanilla.
+
+---
+
+## TieredRepair
+
+Higher-tier stations also repair lower-tier gear. The tiers are workbench < forge < black forge. A forge repairs workbench and forge items, and a black forge repairs items from all three. The galdr table and every other station keep vanilla behavior.
+
+### Config (`[TieredRepair]`)
+
+| Key | Default | Meaning |
+|---|---|---|
+| Enabled | `true` | Feature toggle. `false` = vanilla behavior. |
+
+### How it works
+
+A Postfix on `InventoryGui.CanRepair(ItemDrop.ItemData)` (private) runs only when vanilla returned `false`. That method backs both the repair button's glow (`HaveRepairableItems`) and `RepairOneItem`, so both pick up the change. The Postfix grants repair when all of these hold:
+
+- the item is `m_canBeReparied`;
+- the current station (`Player.GetCurrentCraftingStation()`) is a forge or black forge;
+- the item's recipe names a tiered station, as either `m_craftingStation` or `m_repairStation`, at a lower tier.
+
+Stations match by `CraftingStation.m_name`: `$piece_workbench`, `$piece_forge`, `$piece_blackforge`. Vanilla's `m_minStationLevel` check is skipped for these cross-tier repairs, since the higher station supersedes the lower one's upgrades. Same-tier repairs still go through vanilla's level check unchanged.
+
+### Verified data
+
+Verified against Valheim 1.0.16. The source is `InventoryGui.CanRepair`, plus the game's asset bundles read with UnityPy. Every `CraftingStation` prefab has `m_canRepair = true`. Repairable items name only these stations:
+
+| Station | Repairable recipes |
+|---|---|
+| Workbench | 56 as craft station, plus 37 as repair-only station (hammer, club, stone axe, Feaster, cosmetic clothes) |
+| Forge | 58 |
+| Black forge | 102 |
+| Galdr table (`$piece_magetable`) | 25 |
+
+### Test checklist
+
+1. Damage a workbench item (e.g. leather armor) and a forge item (e.g. a bronze axe).
+2. At a forge, the repair button glows, and pressing it repairs both items.
+3. At a black forge, both items repair too.
+4. At a workbench, only the workbench item repairs.
+5. At a galdr table, neither item repairs.
+6. With `Enabled = false`, each station repairs only its own items, as in vanilla.
