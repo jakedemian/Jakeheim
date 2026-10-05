@@ -19,6 +19,7 @@ namespace Jakeheim
             // each feature binds its own config section; patches check their feature's Enabled at runtime
             RudderReturn.Bind(Config);
             TieredRepair.Bind(Config);
+            RestedOnRespawn.Bind(Config);
 
             _harmony = new Harmony(PluginGuid);
             _harmony.PatchAll();

@@ -8,6 +8,7 @@ A personal, client-side BepInEx quality-of-life mod for Valheim. Each feature ha
 |---|---|---|
 | [RudderReturn](#rudderreturn) | `[RudderReturn]` | The rudder recenters on its own when you're at the helm and not steering. |
 | [TieredRepair](#tieredrepair) | `[TieredRepair]` | The forge also repairs workbench gear, and the black forge also repairs workbench and forge gear. |
+| [RestedOnRespawn](#restedonrespawn) | `[RestedOnRespawn]` | After death, you respawn already Rested at your spawn point's comfort level. |
 
 ## Install
 
@@ -138,3 +139,41 @@ Verified against Valheim 1.0.16. The source is `InventoryGui.CanRepair`, plus th
 4. At a workbench, only the workbench item repairs.
 5. At a galdr table, neither item repairs.
 6. With `Enabled = false`, each station repairs only its own items, as in vanilla.
+
+---
+
+## RestedOnRespawn
+
+After dying, you respawn with the Rested buff already applied, at the comfort level of wherever you spawn. Vanilla makes you sit by a fire for 20 s of Resting first. First login and logging back in are unaffected.
+
+### Config (`[RestedOnRespawn]`)
+
+| Key | Default | Meaning |
+|---|---|---|
+| Enabled | `true` | Feature toggle. `false` = vanilla behavior. |
+
+### How it works
+
+A Postfix on `Game.SpawnPlayer` (private) runs only when `Game.m_respawnAfterDeath` is true. That flag is set by `Player.OnDeath` via `RequestRespawn(10f, afterDeath: true)`. The Postfix does three things:
+
+1. It runs `Cover.GetCoverForPoint` and writes `Player.m_coverPercentage` and `m_underRoof`, so `InShelter()` is correct immediately. Vanilla refreshes these every 1 s.
+2. It sets `Player.m_comfortLevel = SE_Rested.CalculateComfortLevel(player)`. Vanilla refreshes this every 2 s, and `SE_Rested` reads it through `GetComfortLevel()` for its duration.
+3. It calls `SEMan.AddStatusEffect(SEMan.s_statusEffectRested, resetTime: true)`. This takes the same path vanilla uses when `SE_Cozy` hands off to Rested and when you wake from sleep.
+
+Comfort pieces are loaded by this point. `Game.FindSpawnPoint` only returns once `ZNetScene.IsAreaReady(point)` is true, and pieces register in `Piece.s_allComfortPieces` from `Awake`.
+
+### Verified data (Valheim 1.0.16)
+
+- `Rested` (`SE_Rested`): `m_baseTTL = 480`, `m_TTLPerComfortLevel = 60`, so the duration is `480 + (comfort - 1) * 60` s. Regen is health ×1.5, stamina ×2 and eitr ×2, plus +50% skill gain for all skills.
+- `Resting` (`SE_Cozy`): `m_delay = 20` s before it adds Rested. Regen is health ×3, stamina ×4 and eitr ×4.
+- Comfort: base 1, plus 1 and nearby pieces (within 10 m, highest per `ComfortGroup`) only when in shelter (at least 80% cover and under a roof).
+
+`Cover` lives in `assembly_utils.dll`, which is why the csproj references it.
+
+### Test checklist
+
+1. Die with a bed spawn point in a comfy base. On respawn you get "Rested (Comfort: N)" immediately, and N matches what sitting by the fire there shows.
+2. The Rested timer starts at `8:00 + (N - 1) min`.
+3. Die with no bed (spawning at the start stone). You're Rested at comfort 1 (8:00).
+4. Logging out and back in doesn't grant Rested.
+5. With `Enabled = false`, there's no buff on respawn.
