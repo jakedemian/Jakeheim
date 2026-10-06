@@ -9,6 +9,9 @@ A personal, client-side BepInEx quality-of-life mod for Valheim. Each feature ha
 | [RudderReturn](#rudderreturn) | `[RudderReturn]` | The rudder recenters on its own when you're at the helm and not steering. |
 | [TieredRepair](#tieredrepair) | `[TieredRepair]` | The forge also repairs workbench gear, and the black forge also repairs workbench and forge gear. |
 | [RestedOnRespawn](#restedonrespawn) | `[RestedOnRespawn]` | After death, you respawn already Rested at your spawn point's comfort level. |
+| [ExploreRadius](#exploreradius) | `[ExploreRadius]` | Clears map fog of war in a larger radius around you. |
+| [FasterResting](#fasterresting) | `[FasterResting]` | Higher comfort shortens the 20 s rest needed to become Rested. |
+| [FasterMultiCraft](#fastermulticraft) | `[FasterMultiCraft]` | 5x crafts take 3 s instead of 6 s. |
 
 ## Install
 
@@ -35,7 +38,7 @@ The target is `netstandard2.1`, which matches the Mono profile the game ships. A
 - `Jakeheim/Features/<Feature>.cs`: one static class per feature. Each holds a `Bind(ConfigFile)` method plus its nested Harmony patch classes.
 - `decompiled/`: local decompiled game sources used for verification. These are gitignored and never committed.
 
-To add a feature, create `Features/<Name>.cs` with a `Bind` method, call it from `JakeheimPlugin.Awake`, and add a section to this README.
+To add a feature, create `Features/<Name>.cs` with a `Bind` method, call it from `JakeheimPlugin.Awake`, and add both a row to the Features table and a section to this README.
 
 To regenerate a decompiled class:
 
@@ -177,3 +180,85 @@ Comfort pieces are loaded by this point. `Game.FindSpawnPoint` only returns once
 3. Die with no bed (spawning at the start stone). You're Rested at comfort 1 (8:00).
 4. Logging out and back in doesn't grant Rested.
 5. With `Enabled = false`, there's no buff on respawn.
+
+---
+
+## ExploreRadius
+
+Multiplies the radius around you that clears fog of war on the map and minimap.
+
+### Config (`[ExploreRadius]`)
+
+| Key | Default | Meaning |
+|---|---|---|
+| Enabled | `true` | Feature toggle. `false` = vanilla radius. |
+| Multiplier | `2.0` | Scale on the vanilla reveal radius (range 0.1 to 10). |
+
+### How it works
+
+`Minimap.UpdateExplore` calls `Explore(player.position, m_exploreRadius)` every `m_exploreInterval` (2 s). That clears every fog pixel within the radius and marks it in `m_explored`, which is saved per character. A Postfix on `Minimap.Awake` captures the loaded `m_exploreRadius`, which is 100 m by the C# default but can be overridden by the prefab. A Prefix on `UpdateExplore` then sets it to that value times `Multiplier`. Already-explored areas and cartography-table sharing are untouched.
+
+### Test checklist
+
+1. Walk into unexplored land. The cleared circle on the minimap is visibly larger than vanilla.
+2. Change `Multiplier` and restart. The radius scales accordingly.
+3. With `Enabled = false`, the reveal radius is vanilla.
+
+---
+
+## FasterResting
+
+Higher comfort shortens how long you have to be Resting before Rested kicks in.
+
+| Comfort | Resting time |
+|---|---|
+| 0 to 4 | 20 s (vanilla) |
+| 5 to 9 | 16 s |
+| 10 to 14 | 12 s |
+| 15 to 19 | 8 s |
+| 20+ | 4 s |
+
+### Config (`[FasterResting]`)
+
+| Key | Default | Meaning |
+|---|---|---|
+| Enabled | `true` | Feature toggle. `false` = vanilla 20 s. |
+| ComfortPerTier | `5` | Comfort levels per tier. |
+| SecondsPerTier | `4` | Seconds removed from the vanilla delay per tier. |
+| MinimumSeconds | `4` | Floor for the delay. |
+
+The delay is `max(MinimumSeconds, vanilla - floor(comfort / ComfortPerTier) * SecondsPerTier)`.
+
+### How it works
+
+`Resting` is an `SE_Cozy`. Its `UpdateStatusEffect` adds `Rested` once `m_time > m_delay`, and `m_delay` is 20 in the game data. `SEMan` clones each status effect per character, so a Prefix on `SE_Cozy.UpdateStatusEffect` sets the clone's `m_delay` from `Player.GetComfortLevel()`. The vanilla value is read from the untouched `ObjectDB` template, so a game update that changes it carries through. Comfort refreshes every 2 s, so if comfort rises mid-rest, the new delay applies within a couple of seconds.
+
+### Test checklist
+
+1. At comfort 4 or less, Rested arrives 20 s after "You are resting".
+2. At comfort 10 to 14, it arrives after about 12 s.
+3. At comfort 20 or more, it arrives after about 4 s.
+4. With `Enabled = false`, it's always 20 s.
+
+---
+
+## FasterMultiCraft
+
+A 5x craft (holding AltPlace or the left stick) takes 3 s instead of vanilla's 6 s. A 1x craft stays at 2 s. Crafting skill still cuts both by up to 60%, so at skill 100 a 5x craft takes 1.2 s.
+
+### Config (`[FasterMultiCraft]`)
+
+| Key | Default | Meaning |
+|---|---|---|
+| Enabled | `true` | Feature toggle. `false` = vanilla 6 s. |
+| MultiCraftSeconds | `3` | Base seconds for a 5x craft, before the skill reduction. |
+
+### How it works
+
+`InventoryGui.UpdateRecipe` computes the craft time each frame as `m_multiCrafting ? m_multiCraftDuration : m_craftDuration`, then multiplies by `1 - skillFactor * m_craftDurationSkillMaxDecrease` (0.6). A Postfix on `InventoryGui.Awake` captures the loaded `m_multiCraftDuration`, and a Prefix on `UpdateRecipe` sets it to `MultiCraftSeconds`. Upgrades and 1x crafts are untouched.
+
+### Test checklist
+
+1. A 5x craft at low skill fills the progress bar in about 3 s.
+2. A 1x craft still takes about 2 s.
+3. With `Enabled = false`, a 5x craft takes about 6 s.

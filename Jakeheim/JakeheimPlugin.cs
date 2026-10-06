@@ -20,6 +20,9 @@ namespace Jakeheim
             RudderReturn.Bind(Config);
             TieredRepair.Bind(Config);
             RestedOnRespawn.Bind(Config);
+            ExploreRadius.Bind(Config);
+            FasterResting.Bind(Config);
+            FasterMultiCraft.Bind(Config);
 
             _harmony = new Harmony(PluginGuid);
             _harmony.PatchAll();
